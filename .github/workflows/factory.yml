@@ -1,0 +1,65 @@
+name: Factory
+
+on:
+  issues:
+    types: [labeled]
+  pull_request:
+    types: [labeled]
+
+permissions: {}
+
+jobs:
+  ship:
+    if: >-
+      vars.FACTORY_ENABLED == 'true' &&
+      ((github.event_name == 'issues' && github.event.label.name == 'factory') ||
+       (github.event_name == 'pull_request' && github.event.label.name == 'factory-go' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        startsWith(github.event.pull_request.head.ref, 'factory/')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: ${{ github.event.issue.number && format('factory/{0}', github.event.issue.number) || github.event.pull_request.head.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require a trusted operator
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+              ...context.repo, username: context.actor
+            });
+            if (!['admin', 'maintain', 'write'].includes(data.permission)) {
+              throw new Error('Only repository writers can start or approve a factory run');
+            }
+
+      - id: issue
+        name: Validate the task reference
+        run: python3 .factory/resolve_task.py
+
+      # Add the target project's dependency setup and allowed test commands here.
+      - name: Configure GitHub CLI git authentication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh auth setup-git
+
+      - uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          anthropic_api_key: ${{ secrets.FACTORY_ANTHROPIC_API_KEY }}
+          prompt: /ship ${{ steps.issue.outputs.number }}
+          claude_args: >-
+            --permission-mode acceptEdits
+            --allowedTools "Agent,Read,Grep,Glob,Edit,Write,Bash(git *),Bash(gh *)"

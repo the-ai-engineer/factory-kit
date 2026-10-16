@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+!.claude/skills/build/
+!.claude/skills/build/SKILL.md
