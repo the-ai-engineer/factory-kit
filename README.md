@@ -1,6 +1,6 @@
 # factory-kit
 
-A small software factory for Claude Code. Four agents turn a GitHub issue into a reviewed pull request, and a fifth grades past runs so the factory can improve its own rules.
+A small software factory for Claude Code. Four agents turn a Linear or GitHub issue into a reviewed pull request, and a fifth grades past runs so the factory can improve its own rules.
 
 Everything is plain markdown in your repo, so the whole team runs the same process. You can drive it by hand with slash commands, or let GitHub Actions run it when someone adds a label.
 
@@ -16,14 +16,16 @@ Everything is plain markdown in your repo, so the whole team runs the same proce
 │   ├── reviewer.md        # adversarial review, returns a verdict (opus)
 │   └── scorer.md          # grades finished runs (haiku)
 └── skills/
-    ├── ship/              # /ship <N>      the whole pipeline
-    ├── triage/            # /triage <N>    one stage at a time...
-    ├── spec/              # /spec <N>
-    ├── build/             # /build <N>
-    ├── critique/          # /critique <N>
+    ├── ship/              # /ship <issue>      the whole pipeline
+    ├── triage/            # /triage <issue>    one stage at a time...
+    ├── spec/              # /spec <issue>
+    ├── build/             # /build <issue>
+    ├── critique/          # /critique <issue>
     └── improve/           # /improve [days]
 .factory/
-└── code-quality.md        # your repo's rules; every agent reads it
+├── code-quality.md        # your repo's rules; every agent reads it
+├── issue-tracker.md       # resolve Linear or GitHub references
+└── resolve_task.py        # validate optional GitHub Actions events
 .github/workflows/
 ├── factory.yml            # label an issue `factory` to run /ship
 └── factory-improve.yml    # runs /improve every Monday
@@ -31,10 +33,10 @@ Everything is plain markdown in your repo, so the whole team runs the same proce
 
 ## Install
 
-You need Claude Code, the GitHub CLI (`gh auth login`), and a GitHub repo.
+You need Claude Code, a GitHub code repo, GitHub access for PRs, and a connected MCP or CLI for your issue tracker (Linear or GitHub).
 
 ```bash
-git clone --branch codex/import-factory-kit https://github.com/the-ai-engineer/factory-kit
+git clone https://github.com/the-ai-engineer/factory-kit
 cd factory-kit
 # For a fresh target repository with none of these directories:
 cp -R .claude .factory .github /path/to/your-repo/
@@ -51,10 +53,11 @@ Then, in your repo:
 
 ## Run it by hand
 
-Open Claude Code in your repo and pick an issue number:
+Open Claude Code in your repo and pass an issue reference:
 
 ```
-/ship 42
+/ship LIN-123
+/ship https://github.com/acme/app/issues/42
 ```
 
 Or one stage at a time, which is the best way to learn what each agent does:
@@ -66,9 +69,15 @@ Or one stage at a time, which is the best way to learn what each agent does:
 /critique 42
 ```
 
+Bare numbers such as `/ship 42` refer to GitHub issues in the current repo. Linear keys resolve through the connected workspace. Full GitHub URLs must include the owner and repo; `https://github.com/issues/123` is incomplete. The factory asks when the tracker or repo is unclear.
+
+Read [issue tracker instructions](.factory/issue-tracker.md) for the shared rules. Every stage uses the same resolved issue, and comments and run records stay in its original tracker. Agents inherit the session’s tools so MCP access is available; existing permissions still apply.
+
 Small, clear issues skip the spec. Anything that needs a decision gets a spec PR first, and nothing is built until you approve it.
 
 ## Run it from GitHub
+
+The supplied Actions workflow supports GitHub issue labels and numeric `factory/<N>` branches only. `.factory/resolve_task.py` validates those events; it is not the local skill’s argument parser. Run Linear issues locally through `/ship`. A Linear automation needs its own trigger, tracker connection, and allowed MCP or CLI tools; this kit does not supply that integration.
 
 1. Add a repo secret called `FACTORY_ANTHROPIC_API_KEY`. Give the factory its own key so its spend shows up separately in the Claude Console.
 2. Install the Claude GitHub app on the repo.
@@ -89,12 +98,13 @@ One thing to know: PRs opened with the default `GITHUB_TOKEN` don't trigger your
 
 ## How the stages hand off
 
-All state lives on GitHub, so local and CI runs see the same thing:
+The original tracker holds the issue, triage comment, and `factory-ledger` run comments. GitHub holds the spec, code branch, and PR.
 
-- triage posts a write-up comment on the issue and a `size:` label
-- the spec and the code go on one branch, `factory/<N>`, with one PR
-- the `factory-go` label on that PR records maintainer approval; `/ship` checks outstanding decisions and passes approval for the current spec revision. Direct `/build` must also obtain approval
-- every run ends with a `factory-ledger` comment on the issue and the `factory-run` label, which is what `/improve` reads
+- Resolve the issue once and pass its canonical URL and tracker details to every agent.
+- Use one `factory/<key>` branch and `specs/<key>.md`: `LIN-123` for Linear, `42` for a GitHub issue in the code repo. Other GitHub repos include owner and repo in the key.
+- Link the PR on the original issue and the issue in the PR. Never create a duplicate GitHub issue for Linear.
+- Approval applies to the current spec revision. `/ship` checks outstanding decisions and passes the approval source and spec hash. Direct `/build` also checks approval.
+- `/improve` reads saved ledger comments from the configured tracker. If it cannot search them, provide issue references rather than treating missing access as zero runs.
 
 ## Make it yours
 
@@ -104,6 +114,6 @@ Fix the immediate problem, then investigate whether a rule or check would preven
 
 Run `python3 -m unittest discover -s tests -v` in this repository for trigger-validation tests. They check numeric identifiers, fork rejection, repository and branch checks, and the shared task identifier. These tests do not run an LLM or prove the full workflow.
 
-Agents and skills are editable instructions, not a deterministic workflow engine or permission sandbox. Worktrees share the host, credentials, ports, caches, and external services. Test the local stages on a disposable repository before enabling Actions. No API-backed end-to-end factory run has been performed for this import.
+Agents and skills are editable instructions, not a deterministic workflow engine or permission sandbox. Worktrees share the host, credentials, ports, caches, and external services. Test the local stages on a disposable repository before enabling Actions. No API-backed end-to-end factory run has been performed for either tracker.
 
-GitHub is the demonstrated tracker. The kit never merges PRs. Keep paid course prose out of this repository.
+Linear and GitHub issues are supported through the connected MCP or CLI. GitHub hosts code and PRs. The kit never merges PRs. Keep paid course prose out of this repository.

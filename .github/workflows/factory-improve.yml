@@ -1,3 +1,5 @@
+# This example uses GitHub issue records. For Linear, configure its MCP or CLI
+# and explicitly allow its tools before enabling this scheduled job.
 name: Factory improve
 
 on:
@@ -37,7 +39,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         with:
           anthropic_api_key: ${{ secrets.FACTORY_ANTHROPIC_API_KEY }}
-          prompt: /improve 7
+          prompt: |
+            Use GitHub issue records in this repository. Run /improve 7.
           claude_args: >-
             --permission-mode acceptEdits
             --allowedTools "Agent,Read,Grep,Glob,Edit,Write,Bash(git *),Bash(gh *)"
